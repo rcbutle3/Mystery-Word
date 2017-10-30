@@ -1,92 +1,116 @@
+const express = require('express');
 const fs = require('fs');
-const words = fs.readFileSync("/usr/share/dict/words", "utf-8").toUpperCase().split("\n");
+const expressSession = require('express-session');
+const expressValidator = require('express-validator');
+const mustacheExpress = require('mustache-express');
+const bodyParser = require('body-parser');
+// const handlebars = require('handlebars');
 
-let accept;
-let emptyGuess = [];
-let mysteryWord = [];
-let word;
-let remainingGuesses;
-let validWord;
-let guess;
-let guessedLetters = [];
-let playerWord;
-let result;
 
-let playGame = function(words) {
-  word = words[randomFinder(0, words.length - 1)];
-  validWord = word.split('');
-  let wordLength = validWord.length;
-  if (wordLength >= 4 && wordLength <= 6) {
-    for (let i = 0; i < wordLength; i++) {
-        emptyGuess.push('');
-        mysteryWord.push(validWord[i].toUpperCase());
-    }
-  } else {
-    return playGame(words);
+// create mystery word app
+const app = express();
+
+const words = fs
+  .readFileSync("/usr/share/dict/words", "utf-8")
+  .toLowerCase()
+  .split("\n")
+
+
+// mustache-express as template engine
+app.engine('mustache', mustacheExpress());
+app.set('views', 'views'); //********check path
+app.set('view engine', 'mustache');
+
+// static files
+app.use(express.static('public'));
+
+// parse data
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: false}));
+
+// session middleware
+app.use(expressSession({
+  secret: 'shontae', //password
+  resave: false, //dont save session
+  saveUninitialized: true //force session that is unitialized to be saved
+})
+);
+
+
+
+// validation middleware
+app.use(expressValidator());
+app.use((req, res, next) => {
+  if(!req.session.word) {
+    req.session.word = [];
   }
-};
+  next();
+});
 
-function chooseGame(accept) {
-  if(accept === 'no') {
-    alert('Playing it safe, or nahh?');
-  } else if (accept === 'yes') {
-    return playGame(words);
-  }
-}
+// variables
 
-let randomFinder = function(min, max) {
-  return Math.floor(Math.random() * (max - min + 1) + min);
-};
+let guessed = []
 
-function match(guess) {
-  for (let i = 0; i < mysteryWord.length; i++) {
-    if (mysteryWord[i] === guess) {
-      emptyGuess[i] = guess;
-    }
-  }
-  guessedLetters.push(guess);
-  remainingGuesses--;
-  return emptyGuess;
-}
+const randomWord = words[Math.floor(Math.random() * words.length)];
+// const randomWordLength = randomWord.split('');
 
-function repeat() {
-  let searchGuesses = guessedLetters.slice().sort();
-  for (let i = 0; i < guessedLetters.length; i++) {
-    if (searchGuesses[i - 1] == searchGuesses[i]) {
-      guessedLetters.pop(searchGuesses[i]);
-      remainingGuesses++;
-    }
-  }
-};
+let dashes = " _ "
+  .repeat(randomWord.length);
+let remainingGuesses = 8
+let winner = "Winner!!!"
+let loser = "Sorry, better luck next time..."
 
-function findResult(emptyGuess) {
-  let playerWord = emptyGuess.join(',');
-  let orignalWord = mysteryWord.join(',');
-  for (let i = 0; i < emptyGuess.length; i++) {
-    if (remainingGuesses == 0 && emptyGuess[i] == ' ') {
-      result = "Game Over! You lost BYE.";
-      emptyGuess = mysteryWord;
-      return result;
-    } else if (playerWord === orignalWord) {
-      result = "Congrats";
-      return result;
-    }
-  }
-};
+// status check
+app.get('/', function(req, res) {
+console.log(randomWord);
 
-module.exports = {
-  accept: accept,
-  emptyGuess: emptyGuess,
-  mysteryWord: mysteryWord,
-  word: word,
+req.session.randomWord = randomWord
+console.log(req.session)
+
+res.render('home', {
+  dashes: dashes,
+  guessed: guessed,
   remainingGuesses: remainingGuesses,
-  validWord: validWord,
-  guess: guess,
-  guessedLetters: guessedLetters,
-  playerWord: playerWord,
-  chooseGame: chooseGame,
-  match: match,
-  repeat: repeat,
-  findResult: findResult,
-  result: result,
+  winner: winner,
+  loser: loser
+})
+})
+
+// guess a letter
+app.post('/', function(req, res) {
+  const letters = req.body.letters
+  guessed.push(letters)
+
+// if random word contains guessed letters
+if(!randomWord.includes(letters)) {
+// subtract one from remainingGuesses if wrong letter guessed
+  remainingGuesses -= 1
 }
+  req.session.remainingGuesses = remainingGuesses
+
+// loop through word's letters
+dashes = ''
+for(let i = 0; i < randomWord.length; i++) {
+  const letters = randomWord[i]
+  if(guessed.includes(letters)) {
+    dashes += letters
+  } else {
+    dashes += ' _ '
+  }
+}
+req.session.dashes = dashes
+
+
+if(!dashes.includes(' _ ')) {
+  req.session.newGame = true
+  res.render('playAgain', {message: winner})
+} else if (remainingGuesses === 0) {
+  res.render('playAgain', {message: loser})
+} else {
+  res.redirect('/')
+}
+})
+
+app.listen(3000, function() {
+  console.log("It's all good, you got this!!!");
+})
